@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvas
 from matplotlib.figure import Figure
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 from .video_commands import VideoCommands
 from .line import Line
+from .table import MegaTable
 
 
 def conv(x):
@@ -18,10 +20,12 @@ def conv(x):
 
 class VideoPanel(QVBoxLayout):
 
-    def __init__(self, view_parameters, line_dir, parent=None):
+    def __init__(self, ids, service, max_lenght, parent=None):
         QVBoxLayout.__init__(self)
 
-        self.line_dir = line_dir
+        self.line_dir = None
+        self.ids = ids
+        self.service = service
         self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
         self.cid = self.canvas.mpl_connect('button_press_event',
@@ -30,6 +34,8 @@ class VideoPanel(QVBoxLayout):
         # self.axes = self.canvas.figure.add_subplot(111)
         self.axes = self.canvas.figure.subplots()
         self.plot, = self.axes.plot([], [])
+        self.mean_plot, = self.axes.plot([], [])
+        self.max_lenght = max_lenght
         # self.image = self.axes.imshow(np.zeros((640, 512)),
         #                               cmap='gray',
         # vmin=0,
@@ -52,7 +58,7 @@ class VideoPanel(QVBoxLayout):
         self.hist_max = 99
         self.vmin = 0
         self.vmax = 1
-        self.cmap = colormaps[view_parameters.get("map_color")]
+        self.cmap = colormaps["gray"]
 
         self.canvas.draw()
 
@@ -78,25 +84,22 @@ class VideoPanel(QVBoxLayout):
             return (0, 0)
 
     @Slot()
-    def open_video(self, file, dir):
+    def open_video(self, month, file, elevation, azimuth):
+        print(file)
         # self.video = self.get_video(camera, experiment_number)
         # self.movement = self.get_movement(camera, experiment_number)
-        self.video = np.genfromtxt((conv(x) for x in open(dir + file)),
-                                   delimiter=';')
-        self.name = file  # For saving the lines
-        self.title.setText("Looking at " + file)
+        self.table = MegaTable(self.service, self.ids["ricevitore"], month,
+                               file, elevation, azimuth, self.max_lenght)
+        self.name = file["name"]  # For saving the lines
+        self.title.setText("Looking at " + file["name"])
         self.is_video_loaded = True
-        self.x = np.arange(self.video[0][1],
-                           self.video[0][1] + 8192 * self.video[0][2],
-                           self.video[0][2])
 
         self.plot.set(color=self.cmap(0.5))
-        # self.plot.set_norm(self.norm)
-        # self.plot.set_cmap(self.cmap)
-        self.axes.set_xlim(self.x[0], self.x[-1])
-        self.axes.set_ylim(np.min(self.video.min(0)[3:]),
-                           np.max(self.video.max(0)[3:]))
-        self.commands.set_range(0, len(self.video))
+        self.axes.set_xlim(self.table.x[0], self.table.x[-1])
+        # to see if better way
+        self.axes.set_ylim(np.min(self.table.video.min(0)[3:]),
+                           np.max(self.table.video.max(0)[3:]))
+        self.commands.set_range(0, len(self.table.video))
         self.commands.reset()
         self.set_frame(0)
 
@@ -152,6 +155,7 @@ class VideoPanel(QVBoxLayout):
         # if self.is_video_loaded:
         # self.image.set_cmap(self.cmap)
         self.plot.set(color=self.cmap(0.5))
+        self.mean_plot.set(color=self.get_line_color())
         if hasattr(self, 'line'):
             self.line.line.set(color=self.get_line_color())
         self.canvas.draw()
@@ -213,14 +217,17 @@ class VideoPanel(QVBoxLayout):
     def set_frame(self, index):
         if index != self.current_frame:
             try:
-                if index >= 0 and index < len(self.video):
+                if index >= 0 and index < len(self.table.video):
                     self.commands.set_all(index, index)
-                    temp = self.video[index][3:]
+                    temp = self.table.video[index][3:]
                     # temp[temp < 0] = 0
                     # temp[temp >= 0x7FFF] = 0x7FFF - 1
                     # self.image.set_data(temp)
 
-                    self.plot.set_data(self.x, temp)
+                    self.plot.set_data(self.table.x, temp)
+                    self.mean_plot.set_data(
+                        self.table.x,
+                        self.table.mean[math.floor(index / self.max_lenght)])
                     # self.axes.plot(self.x, temp[3:])
                     # self.axes.set_xlim(0, temp.shape[1] - 1)
                     # self.axes.set_ylim(0, temp.shape[0] - 1)

@@ -12,7 +12,7 @@ class MenuView(QMenu):
     percentile_changed = Signal(float, float)
 
     # Passing the function here is terrible, I cannot find a better solution, maybe make the video open the dialog itself (seems clunky)
-    def __init__(self, parent, config, get_min_max_function):
+    def __init__(self, parent):
         QMenu.__init__(self, title="&View", parent=parent)
 
         # self.color_norm_menu = NormMenu(
@@ -21,7 +21,7 @@ class MenuView(QMenu):
         #     self)
         # self.addMenu(self.color_norm_menu)
 
-        self.color_map_menu = ColorMapMenu(config["map_color"], self)
+        self.color_map_menu = ColorMapMenu("gray", self)
         self.addMenu(self.color_map_menu)
 
         # self.orientation_menu = self.addMenu("Orientation")

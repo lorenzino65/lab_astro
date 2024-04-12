@@ -1,4 +1,12 @@
 import sys
+import os.path
+from pathlib import Path
+
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (QApplication, QWidget, QHBoxLayout, QMenuBar,
@@ -13,26 +21,75 @@ class ApplicationWindow(QMainWindow):
 
     def __init__(self, config_path):
         QMainWindow.__init__(self, None)
+
+        line_dir = None
+        SCOPES = ["https://www.googleapis.com/auth/drive"]
+        creds = None
+        # The file token.json stores the user's access and refresh tokens, and is
+        # created automatically when the authorization flow completes for the first
+        # time.
+        if os.path.exists("token.json"):
+            creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+        # If there are no (valid) credentials available, let the user log in.
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    "credentials.json", SCOPES)
+                creds = flow.run_local_server(port=0)
+            # Save the credentials for the next run
+            with open("token.json", "w") as token:
+                token.write(creds.to_json())
+
+        service = build("drive", "v3", credentials=creds)
         self.config = ConfigParser()
         self.config.read(config_path)
         self.config_path = config_path
+        self.config_title = "google dirs"
+        if self.config_title not in self.config.sections():
+            self.config[self.config_title] = {}
+            dirs_id = {}
+            page_token = None
+            while True:
+                # Call the Drive v3 API
+                response = (service.files().list(
+                    q=
+                    "mimeType='application/vnd.google-apps.folder' and name='Dati_Ricevitore_Digitale'",
+                    spaces="drive",
+                    fields="nextPageToken, files(id, name)",
+                    pageToken=page_token,
+                ).execute())
+                for file in response.get("files", []):
+                    # Process change
+                    print(f'Found file: {file.get("name")}, {file.get("id")}')
+                    dirs_id["ricevitore"] = file.get("id")
+                page_token = response.get("nextPageToken", None)
+                if page_token is None:
+                    break
+            while True:
+                # Call the Drive v3 API
+                response = (service.files().list(
+                    q=
+                    "mimeType='application/vnd.google-apps.folder' and name='Dati_Parabola'",
+                    spaces="drive",
+                    fields="nextPageToken, files(id, name)",
+                    pageToken=page_token,
+                ).execute())
+                for file in response.get("files", []):
+                    # Process change
+                    print(f'Found file: {file.get("name")}, {file.get("id")}')
+                    dirs_id["parabola"] = file.get("id")
+                page_token = response.get("nextPageToken", None)
+                if page_token is None:
+                    break
 
-        self.conf_title = "Config"
-        config_section = self.config.sections()
-        if self.conf_title not in config_section or self.config.get(
-                self.conf_title, "line_dir") == '':
-            self.config[self.conf_title] = {}
-            self.save_config(self.conf_title, self.get_conf_defaults())
-            # Just comment this if too agressive
-            print("No line dir")
-            line_dir = None
-        else:
-            line_dir = self.config.get(self.conf_title, 'line_dir')
+            self.save_config(self.config_title, dirs_id)
 
-        self.view_title = "View"
-        if self.view_title not in config_section:
-            self.config[self.view_title] = {}
-            self.save_config(self.view_title, self.get_view_defaults())
+        self.measure_title = "Data"
+        if self.measure_title not in self.config.sections():
+            self.config[self.measure_title] = {}
+            self.save_config(self.measure_title, {"max_lenght": "150"})
 
         # Central widget
         self._main = QWidget()
@@ -40,17 +97,18 @@ class ApplicationWindow(QMainWindow):
 
         # Main layout
         layout = QHBoxLayout(self._main)
-        self.video_panel = VideoPanel(self.config[self.view_title], line_dir)
+        self.video_panel = VideoPanel(
+            self.config[self.config_title], service,
+            self.config[self.measure_title].getint("max_lenght"))
         layout.addLayout(self.video_panel)
 
         # Main menu bar
         self.top_menu = QMenuBar(self)
         self.setMenuBar(self.top_menu)
-        self.menu_file = MenuFileAndLine(self)
+        self.menu_file = MenuFileAndLine(self, service,
+                                         self.config[self.config_title])
         self.top_menu.addMenu(self.menu_file)
-        self.menu_view = MenuView(
-            self, self.config[self.view_title],
-            self.video_panel.get_color_vmin_vmax)  # the bad function
+        self.menu_view = MenuView(self)
         self.top_menu.addMenu(self.menu_view)
 
         # Signals
@@ -58,27 +116,6 @@ class ApplicationWindow(QMainWindow):
         self.menu_file.line_signal.connect(self.video_panel.line_control)
         self.menu_view.color_map_menu.color_chosen.connect(
             self.video_panel.set_color_map)
-
-        # Config
-        self.menu_view.color_map_menu.color_chosen.connect(
-            self.save_color_map_config)
-
-    def get_conf_defaults(self):
-        return {
-            "line_dir": '',
-        }
-
-    def get_view_defaults(self):
-        return {
-            "map_color": "gray",
-            "norm_type": "Linear",
-            "reverse_x": "False",
-            "reverse_y": "False",
-            "transpose": "False",
-            "subtract_background": "False",
-            "min_percentile": "1",
-            "max_percentile": "99"
-        }
 
     def save_config(self, category, configs):
         try:
@@ -89,49 +126,13 @@ class ApplicationWindow(QMainWindow):
         except PermissionError:
             pass
 
-    @Slot()
-    def save_color_map_config(self, map_color):
-        self.save_config(self.view_title, {'map_color': map_color})
-
-    @Slot()
-    def save_color_norm_config(self, norm_type, gamma):
-        configs = {'norm_type': norm_type}
-        if norm_type == "Power":
-            configs["gamma"] = str(gamma)
-        self.save_config(self.view_title, configs)
-
-    def save_checkable_options_config(self, checkable_type, checked):
-        if self.config.get(self.view_title, checkable_type) != checked:
-            if checked:
-                configs = {checkable_type: "True"}
-            else:
-                configs = {checkable_type: "False"}
-            self.save_config(self.view_title, configs)
-
-    @Slot()
-    def save_reverseX_config(self, checked):
-        self.save_checkable_options_config('reverse_x', checked)
-
-    @Slot()
-    def save_reverseY_config(self, checked):
-        self.save_checkable_options_config('reverse_y', checked)
-
-    @Slot()
-    def save_transpose_config(self, checked):
-        self.save_checkable_options_config('transpose', checked)
-
-    @Slot()
-    def save_subtract_background_config(self, checked):
-        self.save_checkable_options_config("subtract_background", checked)
-
-    @Slot()
-    def save_percentile_config(self, min, max):
-        config = {'min_percentile': str(min), 'max_percentile': str(max)}
-        self.save_config(self.view_title, config)
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    Path("config/").mkdir(parents=True,
+                          exist_ok=True)  # Just to assure it exists
+    Path("files/").mkdir(parents=True,
+                         exist_ok=True)  # Just to assure it exists
     w = ApplicationWindow('config/config.ini')
     w.setFixedSize(1280, 720)
     w.show()
