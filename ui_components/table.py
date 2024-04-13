@@ -94,8 +94,6 @@ class MegaTable(object):
                 'Interval not found',
                 'there was no moment in which az and el fit with the data')
 
-        print(f"elevation: {elevation}")
-        print(f"azimuth: {azimuth}")
         pos_start = data[posizione_piu_lunga]
         date_start = datetime.strptime(
             f"{(pos_start[0])}/{(pos_start[1])}/{(pos_start[2][2:])} {(pos_start[3])}:{(pos_start[4])}:{(pos_start[5])}",
@@ -108,10 +106,15 @@ class MegaTable(object):
         files_id = []
         page_token = None
 
+        if date_start.date() == date_end.date():
+            contain_string = f"name contains '{date_start.strftime('%y%m%d')}'"
+        else:
+            contain_string = f"(name contains '{date_start.strftime('%y%m%d')}' or name contains '{date_end.strftime('%y%m%d')}')"
         while True:
             # Call the Drive v3 API
             response = (service.files().list(
-                q=f"mimeType='text/plain' and '{month_id}' in parents",
+                q=f"mimeType='text/plain' and '{month_id}' in parents and " +
+                contain_string,
                 spaces="drive",
                 fields="nextPageToken, files(id, name)",
                 pageToken=page_token,
@@ -127,15 +130,13 @@ class MegaTable(object):
         print(f"start: {date_start}")
         print(f"end: {date_end}")
         files_name.sort()
-        print(files_name[0])
-        print(files_name[1])
         for i in range(len(files_name)):
             check_date = datetime.strptime(files_name[i],
                                            '%y%m%d_%H%M%S_USRP.txt')
             if date_start.date() == check_date.date() and timedelta(
                     seconds=0) <= check_date - date_start <= timedelta(
                         minutes=7):
-                print(check_date)
+                print(f"Actual registered start: {check_date}")
                 starting_index = i
                 break
         for i in range(starting_index + 1, len(files_name)):
@@ -145,14 +146,16 @@ class MegaTable(object):
                     seconds=0) <= date_end - check_date <= timedelta(
                         minutes=7):
                 ending_index = i
+                print(f"Actual registered end: {check_date}")
                 break
 
-        is_first = True
+        videos = []
         for i in range(starting_index, ending_index):
             filepath = f"./files/{files_name[i]}"
             if path.isfile(filepath) and path.getmtime(
                     filepath) - time.time() < 3600 * 24:
-                print(f"{filepath} exists and is recent")
+                # print(f"{filepath} exists and is recent")
+                pass
             else:
                 try:
                     request = service.files().get_media(fileId=files_id[i])
@@ -169,19 +172,17 @@ class MegaTable(object):
                 with open(filepath, "wb") as f:
                     f.write(file.getbuffer())
 
-            if is_first:
-                self.video = np.genfromtxt((conv(x) for x in open(filepath)),
-                                           delimiter=';')
-                is_first = False
-            else:
-                addon = np.genfromtxt((conv(x) for x in open(filepath)),
-                                      delimiter=';')
-                self.video = np.concatenate((self.video, addon))
+            videos.append(
+                np.genfromtxt((conv(x) for x in open(filepath)),
+                              delimiter=';'))
+        self.video = np.concatenate(videos)
+        print("Videos loaded")
         self.max_lenght = max_lenght
         self.mean = self.get_mean(self.video)
         self.x = np.arange(self.video[0][1],
                            self.video[0][1] + 8192 * self.video[0][2],
                            self.video[0][2])
+        print("mean calculated")
 
     def get_mean(self, table):
         num_freq = len(table[0]) - 3

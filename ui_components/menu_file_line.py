@@ -7,12 +7,6 @@ from PySide6.QtWidgets import (QLabel, QHBoxLayout, QVBoxLayout, QLineEdit,
                                QComboBox)
 import os.path
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-
 
 class MenuFileAndLine(QMenu):
 
@@ -75,14 +69,13 @@ class ChooseExperimentDialog(QDialog):
 
         while True:
             # Call the Drive v3 API
-            response = (
-                self.service.files().list(
-                    q=
-                    f"mimeType='application/vnd.google-apps.folder' and '{parabola_id}' in parents",
-                    spaces="drive",
-                    fields="nextPageToken, files(id, name)",
-                    pageToken=page_token,
-                ).execute())
+            response = (self.service.files().list(
+                q=
+                f"mimeType='application/vnd.google-apps.folder' and '{parabola_id}' in parents",
+                spaces="drive",
+                fields="nextPageToken, files(id, name)",
+                pageToken=page_token,
+            ).execute())
             for file in response.get("files", []):
                 # Process change
                 self.dir_names.append(file.get("name"))

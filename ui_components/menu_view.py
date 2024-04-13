@@ -10,6 +10,7 @@ class MenuView(QMenu):
 
     min_max_changed = Signal(float, float)
     percentile_changed = Signal(float, float)
+    switch_signal = Signal(str)
 
     # Passing the function here is terrible, I cannot find a better solution, maybe make the video open the dialog itself (seems clunky)
     def __init__(self, parent):
@@ -35,14 +36,10 @@ class MenuView(QMenu):
         #     self.orientation_menu,
         #     checked=config.getboolean("reverse_y"),
         #     checkable=True)
-        # self.orientation_menu.transpose_action = QAction(
-        #     "Transpose",
-        #     self.orientation_menu,
-        #     checked=config.getboolean("transpose"),
-        #     checkable=True)
+        self.switch_action = QAction("All Data", self, triggered=self.switch)
         # self.orientation_menu.addAction(self.orientation_menu.reverseX_action)
         # self.orientation_menu.addAction(self.orientation_menu.reverseY_action)
-        # self.orientation_menu.addAction(self.orientation_menu.transpose_action)
+        self.addAction(self.switch_action)
         #
         # self.cutoff_menu = self.addMenu("CutOff")
         # self.cutoff_menu.addAction(
@@ -77,6 +74,15 @@ class MenuView(QMenu):
             self.percentile_changed.emit(*dialog.get_values())
             self.min_percentile, self.max_percentile = dialog.get_values()
             print("Percentile changed")
+
+    @Slot()
+    def switch(self):
+        self.switch_signal.emit(self.switch_action.text())
+        print(self.switch_action.text())
+        if self.switch_action.text() == "Mean":
+            self.switch_action.setText("All Data")
+        else:
+            self.switch_action.setText("Mean")
 
 
 class ChoosePercentageDialog(QDialog):

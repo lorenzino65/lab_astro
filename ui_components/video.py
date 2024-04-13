@@ -36,6 +36,7 @@ class VideoPanel(QVBoxLayout):
         self.plot, = self.axes.plot([], [])
         self.mean_plot, = self.axes.plot([], [])
         self.max_lenght = max_lenght
+        self.video_type = ""
         # self.image = self.axes.imshow(np.zeros((640, 512)),
         #                               cmap='gray',
         # vmin=0,
@@ -53,7 +54,7 @@ class VideoPanel(QVBoxLayout):
         self.experiment = "Empty"
         self.is_video_loaded = False
         self.is_line_loaded = False
-        self.current_frame = -1
+        self.current_frame = 0
         self.hist_min = 1
         self.hist_max = 99
         self.vmin = 0
@@ -85,7 +86,6 @@ class VideoPanel(QVBoxLayout):
 
     @Slot()
     def open_video(self, month, file, elevation, azimuth):
-        print(file)
         # self.video = self.get_video(camera, experiment_number)
         # self.movement = self.get_movement(camera, experiment_number)
         self.table = MegaTable(self.service, self.ids["ricevitore"], month,
@@ -95,13 +95,30 @@ class VideoPanel(QVBoxLayout):
         self.is_video_loaded = True
 
         self.plot.set(color=self.cmap(0.5))
+
         self.axes.set_xlim(self.table.x[0], self.table.x[-1])
         # to see if better way
         self.axes.set_ylim(np.min(self.table.video.min(0)[3:]),
                            np.max(self.table.video.max(0)[3:]))
-        self.commands.set_range(0, len(self.table.video))
-        self.commands.reset()
-        self.set_frame(0)
+        print("All set")
+        self.switch_video("Mean")
+
+    @Slot()
+    def switch_video(self, type):
+        if self.video_type != type:
+            self.video_type = type
+            if self.is_video_loaded:
+                if self.video_type == "Mean":
+                    self.commands.set_range(
+                        0, math.floor(len(self.table.video) / self.max_lenght))
+                    # self.commands.reset()
+                    self.current_frame = math.floor(self.current_frame /
+                                                    self.max_lenght)
+                else:
+                    self.commands.set_range(0, len(self.table.video))
+                    # self.commands.reset()
+                    self.current_frame = self.current_frame * self.max_lenght
+                self.set_frame(self.current_frame)
 
     def get_line_color(self):
         color = self.cmap(0.5)
@@ -215,7 +232,29 @@ class VideoPanel(QVBoxLayout):
             self.set_frame(index)
 
     def set_frame(self, index):
-        if index != self.current_frame:
+        if self.video_type == "Mean":
+            try:
+                if index >= 0 and index < math.floor(
+                        len(self.table.video) / self.max_lenght):
+                    self.commands.set_all(index, index)
+                    # temp = self.table.video[index][3:]
+                    # temp[temp < 0] = 0
+                    # temp[temp >= 0x7FFF] = 0x7FFF - 1
+                    # self.image.set_data(temp)
+
+                    self.plot.set_data([], [])
+                    self.mean_plot.set_data(self.table.x,
+                                            self.table.mean[index])
+                    # self.axes.plot(self.x, temp[3:])
+                    # self.axes.set_xlim(0, temp.shape[1] - 1)
+                    # self.axes.set_ylim(0, temp.shape[0] - 1)
+                    # self.vmin = np.percentile(temp, self.hist_min)
+                    # self.vmax = np.percentile(temp, self.hist_max)
+                    self.current_frame = index
+                    self.canvas.draw()
+            except Exception as Error:
+                print(Error)
+        else:
             try:
                 if index >= 0 and index < len(self.table.video):
                     self.commands.set_all(index, index)
